@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"strings"
 	"sync"
 
 	//"bytes"
@@ -189,10 +188,11 @@ func (s *Publisher) Close() {
 type TaskFunc func(v interface{}) interface{}
 
 type Task struct {
-	Id     int64
-	Desc   string
-	Args   interface{}
-	Handle TaskFunc
+	Id          int64
+	Desc        string
+	MessageType int
+	Args        interface{}
+	Handle      TaskFunc
 }
 
 const (
@@ -200,6 +200,13 @@ const (
 	PLATE_FORM_SMAC      = 1
 	PLATE_FORM_TIANYUYUN = 2
 	PLATE_FORM_HEXINYUN  = 3
+)
+
+const (
+	MESSAGE_URL_TYPE    = 0
+	MESSAGE_THREAT_TYPE = 1
+	MESSAGE_IOC_TYPE    = 2
+	MESSAGE_SAMPLE_TYPE = 3
 )
 
 type PlateForm struct {
@@ -245,45 +252,48 @@ func (p *PlateForm) TurnOff() {
 	p.Switch = false
 }
 
-func (p *PlateForm) Register(desc string) {
+func (p *PlateForm) Register(message int) {
 	p.m.Lock()
 	defer p.m.Unlock()
 
 	if !p.Switch {
 		return
 	}
-	switch desc {
-	case `ioc`:
+	switch message {
+	case MESSAGE_IOC_TYPE:
 		p.Ioc_subscriber = p.Pub.SubscribeTopic(func(v interface{}) bool {
 			vv := v.(*Task)
-			if 0 == strings.Compare(vv.Desc, `ioc`) {
+			if vv.MessageType == MESSAGE_IOC_TYPE {
 				return true
 			}
 			return false
 		})
 		break
-	case `samplemd5`:
+	case MESSAGE_SAMPLE_TYPE:
 		p.Sample_md5_subscriber = p.Pub.SubscribeTopic(func(v interface{}) bool {
 			vv := v.(*Task)
-			if 0 == strings.Compare(vv.Desc, `samplemd5`) {
+			if vv.MessageType == MESSAGE_SAMPLE_TYPE {
 				return true
 			}
 			return false
 		})
 		break
-	case `threatlog`:
+	case MESSAGE_THREAT_TYPE:
 		p.Threat_log_subscriber = p.Pub.SubscribeTopic(func(v interface{}) bool {
 			vv := v.(*Task)
-			if 0 == strings.Compare(vv.Desc, `threatlog`) {
+			//if 0 == strings.Compare(vv.Desc, `threatlog`) {
+			//	return true
+			//}
+			if vv.MessageType == MESSAGE_THREAT_TYPE {
 				return true
 			}
 			return false
 		})
 		break
-	case `url`:
+	case MESSAGE_URL_TYPE:
 		p.Url_subscriber = p.Pub.SubscribeTopic(func(v interface{}) bool {
 			vv := v.(*Task)
-			if 0 == strings.Compare(vv.Desc, `url`) {
+			if vv.MessageType == MESSAGE_URL_TYPE {
 				return true
 			}
 			return false
@@ -348,10 +358,10 @@ func init() {
 	g_smac_plateform = NewPlateForm(`smac`, g_publisher)
 	g_hexinyun_plateform = NewPlateForm(`hexinyun`, g_publisher)
 	g_hexinyun_plateform.TurnOff()
-	g_smac_plateform.Register(`ioc`)
-	g_smac_plateform.Register(`url`)
-	g_hexinyun_plateform.Register(`ioc`)
-	g_hexinyun_plateform.Register(`url`)
+	g_smac_plateform.Register(MESSAGE_IOC_TYPE)
+	g_smac_plateform.Register(MESSAGE_URL_TYPE)
+	g_hexinyun_plateform.Register(MESSAGE_IOC_TYPE)
+	g_hexinyun_plateform.Register(MESSAGE_URL_TYPE)
 
 }
 
@@ -365,9 +375,10 @@ func main() {
 	limit := CreateRateLimit(1000, 100)
 
 	t := &Task{
-		Id:   0,
-		Desc: "ioc",
-		Args: `ioc`,
+		Id:          0,
+		Desc:        "ioc",
+		Args:        `ioc`,
+		MessageType: MESSAGE_IOC_TYPE,
 		Handle: func(v interface{}) interface{} {
 			if v, ok := v.(string); ok {
 				fmt.Println(v)
