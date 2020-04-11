@@ -76,3 +76,22 @@ func main() {
 # 消息发生器
 消息发生器是适配NGFW和skydas_hub的统一适配器，确保经过消息适配器的消息都是
 plateform_framework可以识别的
+# 使用framework的注意点
+* framework本身不提供超时机制，所以你自己要在`PlateFormHanle`接口里处理超时异常的
+情况，
+demo:
+```cassandraql
+func PlateFormHanle(v interface{}) {
+    T:=v.(*Task)
+    go func() {
+        T.handle(T.args)
+        T.done < -1 
+    }
+   select {
+    case <-T.done:
+    case <-time.After(time.duration(2)*time.Second)//设置2s超时机制
+   }
+}
+``` 
+
+* 定制化的平台接受消息，这个要自己处理

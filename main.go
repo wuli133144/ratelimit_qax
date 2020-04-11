@@ -178,6 +178,8 @@ func (s *Publisher) Evict(sub chan interface{}) {
 }
 
 func (s *Publisher) Close() {
+	s.m.Lock()
+	defer s.m.Unlock()
 	for key, _ := range s.subscribers {
 		delete(s.subscribers, key)
 		close(key)
