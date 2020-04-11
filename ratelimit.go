@@ -1,4 +1,4 @@
-package ratelimit
+package main
 
 import "time"
 

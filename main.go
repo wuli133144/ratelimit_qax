@@ -206,6 +206,8 @@ type PlateForm struct {
 	Name                  string
 	Pub                   *Publisher
 	PlateFormHanle        TaskFunc
+	Switch                bool
+	m                     sync.Mutex
 	Url_subscriber        subscriber
 	Ioc_subscriber        subscriber
 	Threat_log_subscriber subscriber
@@ -217,6 +219,8 @@ func NewPlateForm(name string, pub *Publisher) *PlateForm {
 		Name:                  name,
 		Pub:                   pub,
 		PlateFormHanle:        nil,
+		Switch:                true,
+		m:                     sync.Mutex{},
 		Url_subscriber:        nil,
 		Ioc_subscriber:        nil,
 		Threat_log_subscriber: nil,
@@ -226,36 +230,68 @@ func NewPlateForm(name string, pub *Publisher) *PlateForm {
 		fmt.Println(`plateform: ` + p.Name)
 		return nil
 	}
-	p.Url_subscriber = p.Pub.SubscribeTopic(func(v interface{}) bool {
-		vv := v.(*Task)
-		if 0 == strings.Compare(vv.Desc, `url`) {
-			return true
-		}
-		return false
-	})
-	p.Ioc_subscriber = p.Pub.SubscribeTopic(func(v interface{}) bool {
-		vv := v.(*Task)
-		if 0 == strings.Compare(vv.Desc, `ioc`) {
-			return true
-		}
-		return false
-	})
-	p.Threat_log_subscriber = p.Pub.SubscribeTopic(func(v interface{}) bool {
-		vv := v.(*Task)
-		if 0 == strings.Compare(vv.Desc, `threatlog`) {
-			return true
-		}
-		return false
-	})
-	p.Sample_md5_subscriber = p.Pub.SubscribeTopic(func(v interface{}) bool {
-		vv := v.(*Task)
-		if 0 == strings.Compare(vv.Desc, `samplemd5`) {
-			return true
-		}
-		return false
-	})
-
 	return p
+}
+
+func (p *PlateForm) TurnOn() {
+	p.m.Lock()
+	defer p.m.Unlock()
+	p.Switch = true
+}
+
+func (p *PlateForm) TurnOff() {
+	p.m.Lock()
+	defer p.m.Unlock()
+	p.Switch = false
+}
+
+func (p *PlateForm) Register(desc string) {
+	p.m.Lock()
+	defer p.m.Unlock()
+
+	if !p.Switch {
+		return
+	}
+	switch desc {
+	case `ioc`:
+		p.Ioc_subscriber = p.Pub.SubscribeTopic(func(v interface{}) bool {
+			vv := v.(*Task)
+			if 0 == strings.Compare(vv.Desc, `ioc`) {
+				return true
+			}
+			return false
+		})
+		break
+	case `samplemd5`:
+		p.Sample_md5_subscriber = p.Pub.SubscribeTopic(func(v interface{}) bool {
+			vv := v.(*Task)
+			if 0 == strings.Compare(vv.Desc, `samplemd5`) {
+				return true
+			}
+			return false
+		})
+		break
+	case `threatlog`:
+		p.Threat_log_subscriber = p.Pub.SubscribeTopic(func(v interface{}) bool {
+			vv := v.(*Task)
+			if 0 == strings.Compare(vv.Desc, `threatlog`) {
+				return true
+			}
+			return false
+		})
+		break
+	case `url`:
+		p.Url_subscriber = p.Pub.SubscribeTopic(func(v interface{}) bool {
+			vv := v.(*Task)
+			if 0 == strings.Compare(vv.Desc, `url`) {
+				return true
+			}
+			return false
+		})
+		break
+	default:
+
+	}
 }
 
 func (p *PlateForm) LoopHanle() {
@@ -266,7 +302,6 @@ func (p *PlateForm) LoopHanle() {
 			if v, ok := i.(*Task); ok {
 				v := v.Handle(v.Args)
 				p.PlateFormHanle(v)
-
 			}
 		}
 	}()
@@ -312,6 +347,12 @@ func init() {
 	g_publisher = NewPulisher(time.Duration(2)*time.Second, 100)
 	g_smac_plateform = NewPlateForm(`smac`, g_publisher)
 	g_hexinyun_plateform = NewPlateForm(`hexinyun`, g_publisher)
+	g_hexinyun_plateform.TurnOff()
+	g_smac_plateform.Register(`ioc`)
+	g_smac_plateform.Register(`url`)
+	g_hexinyun_plateform.Register(`ioc`)
+	g_hexinyun_plateform.Register(`url`)
+
 }
 
 //go tool pprof
@@ -320,6 +361,8 @@ func main() {
 	defer func() {
 		g_publisher.Close()
 	}()
+
+	limit := CreateRateLimit(1000, 100)
 
 	t := &Task{
 		Id:   0,
@@ -334,12 +377,18 @@ func main() {
 			return nil
 		},
 	}
-	g_publisher.Publish(t)
+	//g_publisher.Publish(t)
 
 	for i := 0; i < 400; i++ {
 		go func() {
 			for {
-				g_publisher.Publish(t)
+				if limit.Take() {
+					fmt.Println(`success......................`)
+					g_publisher.Publish(t)
+				} else {
+					fmt.Println(`limitrate......................`)
+				}
+
 			}
 		}()
 	}
