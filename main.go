@@ -219,6 +219,7 @@ type PlateForm struct {
 	Ioc_subscriber        subscriber
 	Threat_log_subscriber subscriber
 	Sample_md5_subscriber subscriber
+	Subscribers           []subscriber
 }
 
 func NewPlateForm(name string, pub *Publisher) *PlateForm {
@@ -232,6 +233,7 @@ func NewPlateForm(name string, pub *Publisher) *PlateForm {
 		Ioc_subscriber:        nil,
 		Threat_log_subscriber: nil,
 		Sample_md5_subscriber: nil,
+		Subscribers:           []subscriber{},
 	}
 	p.PlateFormHanle = func(v interface{}) interface{} {
 		fmt.Println(`plateform: ` + p.Name)
@@ -259,18 +261,20 @@ func (p *PlateForm) Register(message int) {
 	if !p.Switch {
 		return
 	}
+	var subscriber_hanle subscriber
 	switch message {
 	case MESSAGE_IOC_TYPE:
-		p.Ioc_subscriber = p.Pub.SubscribeTopic(func(v interface{}) bool {
+		subscriber_hanle = p.Pub.SubscribeTopic(func(v interface{}) bool {
 			vv := v.(*Task)
 			if vv.MessageType == MESSAGE_IOC_TYPE {
 				return true
 			}
 			return false
 		})
+
 		break
 	case MESSAGE_SAMPLE_TYPE:
-		p.Sample_md5_subscriber = p.Pub.SubscribeTopic(func(v interface{}) bool {
+		subscriber_hanle = p.Pub.SubscribeTopic(func(v interface{}) bool {
 			vv := v.(*Task)
 			if vv.MessageType == MESSAGE_SAMPLE_TYPE {
 				return true
@@ -279,7 +283,7 @@ func (p *PlateForm) Register(message int) {
 		})
 		break
 	case MESSAGE_THREAT_TYPE:
-		p.Threat_log_subscriber = p.Pub.SubscribeTopic(func(v interface{}) bool {
+		subscriber_hanle = p.Pub.SubscribeTopic(func(v interface{}) bool {
 			vv := v.(*Task)
 			//if 0 == strings.Compare(vv.Desc, `threatlog`) {
 			//	return true
@@ -291,7 +295,7 @@ func (p *PlateForm) Register(message int) {
 		})
 		break
 	case MESSAGE_URL_TYPE:
-		p.Url_subscriber = p.Pub.SubscribeTopic(func(v interface{}) bool {
+		subscriber_hanle = p.Pub.SubscribeTopic(func(v interface{}) bool {
 			vv := v.(*Task)
 			if vv.MessageType == MESSAGE_URL_TYPE {
 				return true
@@ -302,49 +306,22 @@ func (p *PlateForm) Register(message int) {
 	default:
 
 	}
+	p.Subscribers = append(p.Subscribers, subscriber_hanle)
 }
 
 func (p *PlateForm) LoopHanle() {
-	go func() {
-		for i := range p.Threat_log_subscriber {
-			//fmt.Println(i)
-			fmt.Println(p.Name)
-			if v, ok := i.(*Task); ok {
-				v := v.Handle(v.Args)
-				p.PlateFormHanle(v)
+
+	for _, ch := range p.Subscribers {
+		go func(ch subscriber) {
+			for j := range ch {
+				fmt.Println(p.Name)
+				if v, ok := j.(*Task); ok {
+					v := v.Handle(v.Args)
+					p.PlateFormHanle(v)
+				}
 			}
-		}
-	}()
-	go func() {
-		for i := range p.Url_subscriber {
-			//fmt.Println(i)
-			fmt.Println(p.Name)
-			if v, ok := i.(*Task); ok {
-				v := v.Handle(v.Args)
-				p.PlateFormHanle(v)
-			}
-		}
-	}()
-	go func() {
-		for i := range p.Sample_md5_subscriber {
-			//fmt.Println(i)
-			fmt.Println(p.Name)
-			if v, ok := i.(*Task); ok {
-				v := v.Handle(v.Args)
-				p.PlateFormHanle(v)
-			}
-		}
-	}()
-	go func() {
-		for i := range p.Ioc_subscriber {
-			//fmt.Println(i)
-			fmt.Println(p.Name)
-			if v, ok := i.(*Task); ok {
-				v := v.Handle(v.Args)
-				p.PlateFormHanle(v)
-			}
-		}
-	}()
+		}(ch)
+	}
 }
 
 var (
@@ -360,6 +337,7 @@ func init() {
 	g_hexinyun_plateform.TurnOff()
 	g_smac_plateform.Register(MESSAGE_IOC_TYPE)
 	g_smac_plateform.Register(MESSAGE_URL_TYPE)
+	g_smac_plateform.Register(MESSAGE_THREAT_TYPE)
 	g_hexinyun_plateform.Register(MESSAGE_IOC_TYPE)
 	g_hexinyun_plateform.Register(MESSAGE_URL_TYPE)
 
@@ -388,6 +366,21 @@ func main() {
 			return nil
 		},
 	}
+
+	tt := &Task{
+		Id:          0,
+		Desc:        "threat",
+		Args:        `threat`,
+		MessageType: MESSAGE_THREAT_TYPE,
+		Handle: func(v interface{}) interface{} {
+			if v, ok := v.(string); ok {
+				fmt.Println(v)
+			} else {
+				panic(fmt.Errorf(`type unvalid`).Error())
+			}
+			return nil
+		},
+	}
 	//g_publisher.Publish(t)
 
 	for i := 0; i < 400; i++ {
@@ -396,6 +389,7 @@ func main() {
 				if limit.Take() {
 					fmt.Println(`success......................`)
 					g_publisher.Publish(t)
+					g_publisher.Publish(tt)
 				} else {
 					fmt.Println(`limitrate......................`)
 				}
